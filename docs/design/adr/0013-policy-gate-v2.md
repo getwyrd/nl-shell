@@ -91,6 +91,18 @@ Alternatives considered:
   proves too coarse.
 - **Sandboxing every command** with bubblewrap or Landlock. Rejected for now: nl-shell
   must act on the user's real system. It stays an option for running read-only commands.
+- **bash's own parser**, extracted from `parse.y` or through its Python port bashlex
+  (#238). Rejected: it is GPLv3 (ADR-0012), it is entangled with bash's lexer state and
+  globals, so extracting it means maintaining a fork, and bashlex is stale (see Context).
+  Above all, a perfect parse still would not decide what runs, because aliases, functions,
+  `PATH` and traps act after parsing. bash serves instead as an oracle in the differential
+  test (spec Conformance), where it is run, never linked.
+- **brush-parser** (Rust, MIT), a bash-compatible parser tested against bash (#238).
+  Rejected for now: it needs a Rust extension inside a Python package (pyo3 wheels, #50)
+  and a rewrite of the fail-closed walker in `gate/parse.py` against a pre-1.0 AST. The
+  open gate work sits above the walker's `Invocation` output and does not depend on the
+  parser. Revisit if the differential test finds divergences tree-sitter-bash cannot be
+  made to flag.
 
 ## Consequences
 
