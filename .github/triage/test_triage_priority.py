@@ -7,6 +7,8 @@ from __future__ import annotations
 
 import argparse
 import ast
+import contextlib
+import io
 import json
 import subprocess
 import types
@@ -165,13 +167,19 @@ class Echo(unittest.TestCase):
     def test_one_word_is_not_a_reason(self) -> None:
         for bare in ("major", "bug", "", "area session"):
             with self.subTest(bare=bare):
-                self.assertEqual(tp.scrub(bare, ""), "(no reason given)")
+                self.assertEqual(tp.scrub(bare, ""), "")
 
     def test_schema_describes_each_reason(self) -> None:
         props = tp.verdict_schema(AREAS)["properties"]["reasons"]["properties"]
         for key, spec in props.items():
             with self.subTest(reason=key):
                 self.assertIn("sentence", spec["description"])
+
+    def test_schema_puts_reasons_first(self) -> None:
+        schema = tp.verdict_schema(AREAS)
+        self.assertEqual(next(iter(schema["properties"])), "reasons")
+        self.assertEqual(schema["required"][0], "reasons")
+        self.assertEqual(set(schema["required"]), set(schema["properties"]))
 
     def test_caps_length(self) -> None:
         self.assertLessEqual(len(tp.scrub("word " * 100, "")), tp.MAX_REASON)
@@ -336,6 +344,46 @@ class BuildPlan(unittest.TestCase):
         self.assertTrue(truncated)
         self.assertIn("cut at", text)
         self.assertLess(len(text), tp.MAX_BODY + tp.MAX_TITLE + 200)
+
+    def _short_reasons_plan(self, i: tp.Issue | None = None, **v) -> tuple[tp.Plan, str]:
+        reasons = {k: "major" for k in verdict()["reasons"]}
+        with contextlib.redirect_stderr(io.StringIO()) as err:
+            p = plan(i, reasons=reasons, **v)
+        return p, err.getvalue()
+
+    def test_short_reasons_are_left_out_not_replaced(self) -> None:
+        p, _ = self._short_reasons_plan(
+            severity="minor", reach="adversarial", flags=dict(NO_FLAGS, security=True))
+        self.assertNotIn("no reason given", p.comment)
+        self.assertIn("| `sev:minor` |  |", p.comment)
+        self.assertIn("| `area:session` |  |", p.comment)
+        # The override note stays and ends cleanly, with no dangling reason after it.
+        self.assertRegex(p.comment, r"security or safety bug[^|]*\. \|")
+        self.assertEqual(p.add_labels[0], "bug")
+
+    def test_a_type_disagreement_without_a_reason_ends_the_sentence(self) -> None:
+        p, _ = self._short_reasons_plan(i=issue(labels={"enhancement"}), type="research")
+        self.assertIn("It reads more like research. |", p.comment)
+
+    def test_unsure_without_a_missing_reason(self) -> None:
+        with contextlib.redirect_stderr(io.StringIO()):
+            p = plan(unsure=True, missing="")
+        self.assertIn("| `needs-triage` | Severity or reach could not be placed. |", p.comment)
+
+    def test_a_left_out_reason_is_logged_without_its_text(self) -> None:
+        reasons = dict(verdict()["reasons"], severity="Majorish", reach="")
+        with contextlib.redirect_stderr(io.StringIO()) as err:
+            plan(reasons=reasons)
+        log = err.getvalue()
+        self.assertIn("#7: left out the severity reason: 1 words", log)
+        self.assertIn("#7: left out the reach reason: 0 words", log)
+        self.assertNotIn("Majorish", log)
+        self.assertNotIn("type reason", log)
+
+    def test_withheld_reasons_are_not_logged_as_short(self) -> None:
+        with contextlib.redirect_stderr(io.StringIO()) as err:
+            plan(vulnerability_report=True, reasons={k: "" for k in verdict()["reasons"]})
+        self.assertEqual(err.getvalue(), "")
 
     def test_unclassified_plan(self) -> None:
         p = tp.unclassified_plan(issue(), "the model declined to classify it", model="m", usage="u")

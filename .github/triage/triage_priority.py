@@ -46,6 +46,7 @@ MAX_TOKENS = 4096
 MAX_TITLE = 300
 MAX_BODY = 6000
 MAX_REASON = 200
+MIN_REASON_WORDS = 3
 MAX_COMMENT = 6000
 MARKER = "<!-- nl-shell-triage -->"
 # Only the workflow's own comments count as triage comments; anyone can type the marker.
@@ -110,9 +111,17 @@ def verdict_schema(areas: list[str]) -> dict:
     reasons = {k: {"type": "string",
                    "description": f"One plain sentence of 8 to 30 words: {v}. Never quote the issue."}
                for k, v in about.items()}
+    # Reasons come first: structured output writes fields in schema order, so the model
+    # explains before it picks the labels instead of filling reasons in afterwards.
     return {
         "type": "object",
         "properties": {
+            "reasons": {
+                "type": "object",
+                "properties": reasons,
+                "required": list(reasons),
+                "additionalProperties": False,
+            },
             "type": {"type": "string", "enum": list(TYPES)},
             "severity": {"type": "string", "enum": list(SEVERITIES)},
             "reach": {"type": "string", "enum": list(REACHES)},
@@ -128,15 +137,9 @@ def verdict_schema(areas: list[str]) -> dict:
             "missing": {"type": "string"},
             "secret_in_issue": {"type": "boolean"},
             "vulnerability_report": {"type": "boolean"},
-            "reasons": {
-                "type": "object",
-                "properties": reasons,
-                "required": list(reasons),
-                "additionalProperties": False,
-            },
         },
-        "required": ["type", "severity", "reach", "areas", "flags", "review_priority", "unsure",
-                     "missing", "secret_in_issue", "vulnerability_report", "reasons"],
+        "required": ["reasons", "type", "severity", "reach", "areas", "flags", "review_priority",
+                     "unsure", "missing", "secret_in_issue", "vulnerability_report"],
         "additionalProperties": False,
     }
 
@@ -251,8 +254,9 @@ def scrub(reason: str, issue_text: str) -> str:
     text = text.replace("@", "@​")
     if len(text) > MAX_REASON:
         text = text[:MAX_REASON - 1].rstrip() + "…"
-    # A word or two ("major", "bug") is a label name, not a reason.
-    return text if len(text.split()) >= 3 else "(no reason given)"
+    # A word or two ("major", "bug") is a label name, not a reason: leave it out (empty)
+    # rather than post a placeholder.
+    return text if len(text.split()) >= MIN_REASON_WORDS else ""
 
 
 # --- the plan: what to write to the issue -------------------------------------------------
@@ -318,14 +322,26 @@ def _row(label: str, why: str) -> str:
     return f"| `{label}` | {why} |"
 
 
+def _posted_reason(number: int, field: str, reason: str, issue_text: str) -> str:
+    """``scrub(reason)``, and a log line when the reason is left out as too short. Called
+    only for a reason the comment uses. The log names the field and the word count only,
+    never the text: it is model output about an untrusted issue."""
+    text = scrub(reason, issue_text)
+    if not text:
+        print(f"#{number}: left out the {field} reason: {len(reason.split())} words, "
+              f"fewer than {MIN_REASON_WORDS}", file=sys.stderr)
+    return text
+
+
 def build_plan(issue: Issue, verdict: dict, config: dict, *, model: str, usage: str,
                truncated: bool) -> Plan:
     issue_text = f"{issue.title}\n{issue.body or ''}"
-    if verdict["vulnerability_report"]:
-        # Labels yes, explanation no: a public comment must not restate the details.
-        reasons = {k: "Not restated here; see the note below." for k in verdict["reasons"]}
-    else:
-        reasons = {k: scrub(v, issue_text) for k, v in verdict["reasons"].items()}
+
+    def reason(key: str) -> str:
+        if verdict["vulnerability_report"]:
+            # Labels yes, explanation no: a public comment must not restate the details.
+            return "Not restated here; see the note below."
+        return _posted_reason(issue.number, key, verdict["reasons"][key], issue_text)
     plan, rows = Plan(number=issue.number), []
 
     have_type = [t for t in TYPES if t in issue.labels]
@@ -334,17 +350,18 @@ def build_plan(issue: Issue, verdict: dict, config: dict, *, model: str, usage: 
         # The label wins, but a disagreement is worth a line: templates set the type.
         why = "Kept the type the issue already had."
         if verdict["type"] != have_type[0]:
-            why += f" It reads more like {verdict['type']}: {reasons['type']}"
+            why += f" It reads more like {verdict['type']}" + (
+                f": {why_type}" if (why_type := reason("type")) else ".")
         rows.append(_row(have_type[0], why))
     else:
         plan.add_labels.append(verdict["type"])
-        rows.append(_row(verdict["type"], reasons["type"]))
+        rows.append(_row(verdict["type"], reason("type")))
 
     for area in verdict["areas"]:
         plan.add_labels.append(f"area:{area}")
     if verdict["areas"]:
         rows.append(_row(", ".join(f"area:{a}" for a in verdict["areas"]).replace(", ", "`, `"),
-                         reasons["area"]))
+                         reason("area")))
 
     if kind not in PRIORITISED_TYPES:
         rows.append(_row("no priority", f"ADR-0026 does not yet define a priority for {kind} "
@@ -352,8 +369,9 @@ def build_plan(issue: Issue, verdict: dict, config: dict, *, model: str, usage: 
     elif verdict["unsure"]:
         plan.add_labels.append("needs-triage")
         missing = ("not restated" if verdict["vulnerability_report"]
-                   else scrub(verdict["missing"], issue_text))
-        rows.append(_row("needs-triage", f"Severity or reach could not be placed. Missing: {missing}"))
+                   else _posted_reason(issue.number, "missing", verdict["missing"], issue_text))
+        why = "Severity or reach could not be placed."
+        rows.append(_row("needs-triage", f"{why} Missing: {missing}" if missing else why))
     else:
         prio, base, notes = compute_priority(verdict["severity"], verdict["reach"],
                                              verdict["flags"], verdict["review_priority"],
@@ -362,11 +380,13 @@ def build_plan(issue: Issue, verdict: dict, config: dict, *, model: str, usage: 
             plan.remove_labels.append("needs-triage")
         plan.add_labels += [f"sev:{verdict['severity']}", f"reach:{verdict['reach']}",
                             f"priority:P{prio}"]
-        rows.append(_row(f"sev:{verdict['severity']}", reasons["severity"]))
-        rows.append(_row(f"reach:{verdict['reach']}", reasons["reach"]))
+        rows.append(_row(f"sev:{verdict['severity']}", reason("severity")))
+        rows.append(_row(f"reach:{verdict['reach']}", reason("reach")))
         why = f"{verdict['severity']} × {verdict['reach']} is P{base} in the ADR-0026 table."
         if notes:
-            why += " Then: " + "; ".join(notes) + f". {reasons['overrides']}"
+            why += " Then: " + "; ".join(notes) + "."
+            if why_overrides := reason("overrides"):
+                why += f" {why_overrides}"
         rows.append(_row(f"priority:P{prio}", why))
 
     if not issue.assignees:
