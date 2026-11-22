@@ -1,6 +1,8 @@
 #!/usr/bin/env python3
 """Build one supported bash release from GNU source, for testing the session on it.
-Stdlib only, plus a C toolchain (`cc`, `make`).
+Stdlib only, plus a C toolchain (`cc`, `make`) and a terminfo development library
+(Debian/Ubuntu: `libncurses-dev`): without one, bash falls back to its bundled termcap,
+which GCC 14 and later refuse to compile.
 
     python scripts/build_bash.py 5.2 PREFIX
 
@@ -75,8 +77,13 @@ def build(version: str, prefix: str) -> None:
         src = os.path.join(work, f"bash-{version}")
         for patch in patches:
             subprocess.run(["patch", "-s", "-p0"], input=patch, cwd=src, check=True)
+        # GCC 15 compiles C23 by default, where `f()` declares no parameters; bash 5.1 and
+        # 5.2 use old-style declarations, so build as GNU C17. The caller's CFLAGS
+        # (configure's default when unset) come first and are kept.
+        cflags = os.environ.get("CFLAGS", "-g -O2")
+        env = dict(os.environ, CFLAGS=f"{cflags} -std=gnu17")
         subprocess.run(["./configure", "--quiet", f"--prefix={os.path.abspath(prefix)}"],
-                       cwd=src, check=True)
+                       cwd=src, env=env, check=True)
         subprocess.run(["make", "-s", f"-j{os.cpu_count() or 1}"], cwd=src, check=True)
         subprocess.run(["make", "-s", "install"], cwd=src, check=True)
 
