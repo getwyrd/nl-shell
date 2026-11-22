@@ -32,7 +32,7 @@ Every item in the state block carries a taint label by provenance (ADR-0016):
 | Label | Examples |
 |---|---|
 | trusted | what the user typed, their confirms and edits, exit codes from the control channel, a cwd made of plain path characters |
-| local-reference | dpkg-owned man pages and `--help` (harvested in the reference VM), the tldr snapshot, retrieved *untainted* history |
+| local-reference | Package-owned man pages and `--help` (harvested in the active target's reference VM; `dpkg` ownership on `ubuntu-26.04`), the tldr snapshot, retrieved *untainted* history |
 | untrusted | stdout, stderr, file contents, file names, env (beyond a fixed list), reader output, anything from the network |
 
 What the label changes depends on the command's class:
@@ -52,7 +52,8 @@ Taint is about **who could have written the text**, not whether it looks harmful
 ## 8.3 The policy gate and risk classes
 
 Every command, typed or proposed (including raw `\cmd` input), is classed by the
-procedure in [`specs/policy-gate/v1.md`](../specs/policy-gate/v1.md) (ADR-0013):
+shared procedure, with OS-specific inputs from the active target (examples below
+use `ubuntu-26.04`), in [`specs/policy-gate/v1.md`](../specs/policy-gate/v1.md) (ADR-0013):
 
 | Class | Examples | Behaviour |
 |---|---|---|
@@ -110,7 +111,7 @@ the command's done record on the control channel, never on printed text.
 ## 8.5 The quarantined reader (dual-LLM pattern)
 
 A second model call that reads raw untrusted text and may only answer with fixed choices
-and names that exist in the local dpkg/apt index; there is no free-text field (ADR-0017).
+and names confirmed by the active target's package data/query (`dpkg`/`apt` for `ubuntu-26.04`); there is no free-text field (ADR-0017).
 The command model sees only that answer, labelled untrusted. The reader has no PTY, no tools
 and no network. This is the **dual-LLM pattern** (Willison, 2023) with constrained output,
 not CaMeL: it limits prompt injection to the choice of an enum value and a few existing
@@ -139,11 +140,11 @@ Prefixes avoid `!` and `%`, which collide with bash history expansion and job sp
 The **teacher** is a large model on the developer's hardware: it generates training data
 and is a dev-only fallback. The **student** is the 1.5–3B model fine-tuned from that data;
 it is what ships (ADR-0009). Training data is **grounded** (generated from a tool's real man
-page) and **execution-filtered** (kept only if it ran correctly in a fresh 26.04 snapshot).
+page) and **execution-filtered** (kept only if it ran correctly in a fresh snapshot of the target's VM).
 
-## 8.8 Ubuntu 26.04 specifics
+## 8.8 `ubuntu-26.04` target specifics
 
-What the student must know, and what it must unlearn:
+For this first and currently only target, what the student must know and unlearn:
 
 - sudo-rs is `sudo` (0.2.13 on 26.04, checked): no plugin system, `pwfeedback` on by
   default ([Phoronix](https://www.phoronix.com/news/sudo-rs-password-feedback)); supports
@@ -161,8 +162,8 @@ What the student must know, and what it must unlearn:
 
 ## 8.9 Locally complete
 
-Every runtime component works offline (ADR-0003). Lookup order: trained knowledge → local
-`man`/`--help`/apt → (only if ever added, off by default) a quarantined web lookup.
+Every runtime component works offline (ADR-0003). Lookup order: trained knowledge →
+local `man`/`--help`/package data for the active target (`apt` on `ubuntu-26.04`) → (only if ever added, off by default) a quarantined web lookup.
 
 ## 8.10 Security
 

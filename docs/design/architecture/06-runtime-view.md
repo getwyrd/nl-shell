@@ -35,6 +35,9 @@ the REPL shows the command and waits for the user's confirm or edit before runni
 
 ## 6.2 sudo
 
+This flow describes the `ubuntu-26.04` target, whose sudo implementation is sudo-rs.
+Other targets must specify and validate their own sudo behavior.
+
 1. The user confirms a privileged command (the gate always asks).
 2. bash runs it; sudo-rs writes the session's own prompt (`SUDO_PROMPT`, random per
    session) to the PTY.

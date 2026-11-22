@@ -25,7 +25,7 @@ tags:
 | Q4 | Output contains terminal escape sequences | Confirm UI shows the command as bash parses it; nothing hidden | 1 |
 | Q5 | Network unplugged | Every runtime feature works | 2 |
 | Q6 | A request on a 16 GB test-matrix card | First token and full command sub-second | 3 |
-| Q7 | A request typed with an old habit (`ifconfig`, `apt-key`) | Proposal uses the 26.04 way | 4 |
+| Q7 | A request typed with an old habit (`ifconfig`, `apt-key`) | Proposal uses the active target's way (26.04 for `ubuntu-26.04`) | 4 |
 | Q8 | Fresh install on a supported machine | Correct backend chosen; works without training | 5 |
 | Q9 | Model server killed mid-request | The prompt returns within the timeout; typed commands keep working (ADR-0018 point 7) | 3 |
 
@@ -41,7 +41,7 @@ lands, it is canonical and this table points to it.
 | `bash -n` syntax pass rate | ≥ 99% |
 | Sandbox execution success | tracked per category |
 | Unrequested destructive proposals | ≈ 0 (**blocking**) |
-| 26.04-specific probe accuracy | ≥ teacher |
+| Target-specific probe accuracy (initially 26.04) | ≥ teacher |
 | Latency (first token / full command) | sub-second on every 16 GB test-matrix card |
 | VRAM footprint | ≤ 6 GB total |
 | CPU-only mode | functional, latency documented |
@@ -52,11 +52,11 @@ lands, it is canonical and this table points to it.
 |---|---|---|
 | Gate misclassification | The one deterministic safety decision; a miss runs a command unconfirmed | Table-driven tests; unparseable → mutating; model can only raise the class |
 | Prompt injection via output | Small models are easy to steer | Taint forces confirm; quarantined reader; sudo blocked on taint |
-| Password leak through the PTY | Passthrough must start before the first keystroke | Tested prompt detection; re-verify on sudo-rs updates |
+| Password leak through the PTY | Passthrough must start before the first keystroke | Tested prompt detection; re-verify on target sudo updates (sudo-rs for `ubuntu-26.04`) |
 | Model and data licenses | Teacher output may not be usable for a distributed model; base-model licenses differ by size | Checked before M2 data generation and M3 training (release-gating issues) |
 | Small-model quality | A 1.5–3B model may miss the eval targets | Grounded, execution-filtered data; local reference retrieval; dev-only teacher fallback |
-| AMD support | ROCm coverage of consumer cards varies; ROCm doesn't list 26.04 | Vulkan by default (ADR-0019); test matrix includes AMD; LoRA, not QLoRA, for AMD fine-tuning |
-| 26.04 point releases | Tools and defaults drift | Retrain loop (M4.3) |
+| AMD support on `ubuntu-26.04` | ROCm coverage of consumer cards varies; ROCm doesn't list 26.04 | Vulkan by default (ADR-0019); test matrix includes AMD; LoRA, not QLoRA, for AMD fine-tuning |
+| `ubuntu-26.04` point releases | Tools and defaults drift | Retrain loop (M4.3) |
 | Router misroutes English | Plain English that starts with a command name (`find`, `watch`, `who`) runs as a command | The gate still applies; English-sentence rule in the M0 router; M3 classifier; `\` and `@` prefixes force the route |
 
 ## 12. Glossary
@@ -67,9 +67,9 @@ lands, it is canonical and this table points to it.
 | **Command model** | The model that turns a request plus the state block into a proposed command. The student, once M4 lands |
 | **Control channel** | The pipe on fd 3 the PTY session writes start/done records and snapshots to; printed text can't reach it (ADR-0014) |
 | **Confirm** | The user's explicit yes (or edit) before a non-read-only command runs |
-| **Correction pair** | Training pair mapping an outdated habit to the 26.04 way |
+| **Correction pair** | Training pair mapping an outdated habit to the target's way (initially 26.04) |
 | **Degraded mode** | The session state nl-shell enters when the control channel misbehaves or its hooks were changed: no further command is sent to the session until it is restarted |
-| **Execution filter** | Keeping a training pair only if its command ran correctly in a fresh 26.04 snapshot |
+| **Execution filter** | Keeping a training pair only if its command ran correctly in a fresh snapshot of the target's VM (initially 26.04) |
 | **GGUF** | llama.cpp's model file format; one format for every GPU vendor |
 | **Grounded generation** | The teacher writes training pairs from a tool's real man page, not from memory |
 | **Intent classifier** | Tiny model that decides whether plain input is bash or natural language |
@@ -79,7 +79,7 @@ lands, it is canonical and this table points to it.
 | **PTY** | Pseudo-terminal; lets nl-shell run one persistent bash that behaves like a real terminal |
 | **QLoRA** | Memory-efficient fine-tuning that trains small adapter weights on a quantized model. Used on NVIDIA; on AMD, Unsloth supports LoRA officially but QLoRA (bitsandbytes on ROCm) isn't demonstrated |
 | **Quarantined reader** | Separate model call that reads untrusted text and may only answer in a fixed schema |
-| **Reference VM** | The Ubuntu 26.04 VM used as source of truth and execution sandbox at build time |
+| **Reference VM** | A per-target VM (initially Ubuntu 26.04) used as source of truth and execution sandbox at build time |
 | **Risk class** | read-only, mutating, session-altering, destructive or privileged |
 | **Session snapshot** | Aliases, functions, traps, `PATH` and hook hashes reported after every command; the gate resolves command words against it |
 | **State block** | What the command model knows about the session: cwd, last command, exit code, output tail, ls, filtered env, retrieved history examples — each item with its taint label |
@@ -102,7 +102,7 @@ proposal that must not get past the confirm.
 |---|---|---|
 | 0 — Unit and table tests | Gate classification table, state-block building, taint labels, log schema | From M0, every PR |
 | 1 — PTY integration | Real bash in a PTY: persistence, exit codes, sudo passthrough with a test sudoers setup | From M0, in a throwaway VM |
-| 2 — Sandbox execution | Candidate commands in a fresh 26.04 snapshot | From M2 (the execution filter) |
+| 2 — Sandbox execution | Candidate commands in a fresh snapshot of the target's VM (initially 26.04) | From M2 (the execution filter) |
 | 3 — Model eval | The eval suite against teacher and student | From M4 |
 | 4 — Test matrix | Eval and latency per card, plus CPU-only | M5 |
 

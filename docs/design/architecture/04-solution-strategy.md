@@ -20,7 +20,7 @@ everything else waits for a confirm. A command the gate classed privileged switc
 terminal into **passthrough** when the session's own sudo prompt appears; nothing is captured
 then, and no other command can enter it. Untrusted text the model needs to understand goes
 through a **quarantined reader** that may only return structured data. The command model is
-a **student** distilled from a larger **teacher** and trained to know Ubuntu 26.04.
+a **student** distilled from a larger **teacher** and trained for its target (initially Ubuntu 26.04).
 
 ## 4.2 Key strategies
 
@@ -30,7 +30,7 @@ a **student** distilled from a larger **teacher** and trained to know Ubuntu 26.
 | Prompt injection through output | Taint labels; quarantined reader | 0016, 0017 |
 | The sudo password | PTY passthrough, never captured | 0014, 0015 |
 | Fast on consumer GPUs | Small distilled student; llama.cpp GGUF on every vendor | 0008, 0009 |
-| Knows 26.04 without lookups | Grounded training data filtered by execution in a 26.04 VM | 0009 |
+| Knows the target without lookups | Grounded training data filtered by execution in that target's VM (initially 26.04) | 0009 |
 | Privacy | Locally complete; generic training data; local personalization | 0003, 0010 |
 | Interaction shape | Own the session in a PTY front end; keep stock bash as the executor | 0002, 0014, 0024 |
 

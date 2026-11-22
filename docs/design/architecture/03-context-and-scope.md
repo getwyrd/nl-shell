@@ -17,7 +17,7 @@ graph LR
     user(["User at the terminal"])
     nls["nl-shell"]
     bash["bash (PTY)"]
-    sudo["sudo-rs"]
+    sudo["Target sudo (sudo-rs on ubuntu-26.04)"]
     sys["The system:<br/>files, packages, services"]
     docs["Local reference docs<br/>man, --help, tldr snapshot"]
     hist["~/.bash_history"]

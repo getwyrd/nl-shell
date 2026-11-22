@@ -12,12 +12,30 @@ tags:
 
 ## 7.1 The user's machine (the deliverable)
 
-- The REPL + GGUF weights + an install script. No teacher, no training pipeline, no PyTorch.
-- One `llama-server` per user, run as the systemd user service `nl-shell-model.service` on
+The intended deliverable below includes planned installer and packaging work, not
+an assertion that these already ship.
+
+- The REPL and an install script, with GGUF weights downloaded separately. No teacher,
+  no training pipeline, no PyTorch.
+- **Target packaging (planned, #48, #50):** The package contains every target's runtime
+  files: `target.toml`, `model.toml`, `allowlist.toml`, `sensitive.toml`,
+  `gate-vectors.toml` and `prompts/`. Build-time `harvest.toml` and `eval/` are not shipped.
+- **Model integrity (planned):** Weights are not stored in git or the package;
+  `model.toml` records each file's URL, size, SHA-256, base model/license, training run
+  (pipeline commit and dataset hash), and quantization where offered. The installer
+  downloads at install or explicit update into `$XDG_DATA_HOME/nl-shell/models/`,
+  verifying SHA-256 against `model.toml` before use. The REPL must refuse to load
+  weights on a hash mismatch with the active target's manifest. Downloads happen only at install or explicit update,
+  never at runtime; offline operation is preserved. These checks are requirements
+  awaiting implementation.
+- **Personalization adapters (planned):** Stored per target and base-weight hash;
+  the REPL must not load an adapter on different weights. Compatibility enforcement
+  remains awaiting implementation.
+- For `ubuntu-26.04`, one `llama-server` per user, run as the systemd user service `nl-shell-model.service` on
   a Unix socket, serving both the command model and the reader (ADR-0018).
 - llama.cpp backend picked at install time (ADR-0019): CUDA on NVIDIA; Vulkan (Mesa RADV)
   by default on AMD, ROCm opt-in; CPU as the last resort.
-- Local reference index harvested at install time from dpkg-owned man pages and an
+- Local reference index harvested at install time from package-owned man pages (the target's package-owner query; `dpkg -S` on `ubuntu-26.04`) and an
   allowlist of `--help` outputs, without running arbitrary binaries (#23, #49).
 - Files under the XDG base directories (ADR-0020): config and prompts in
   `~/.config/nl-shell/`, weights and the reference index in `~/.local/share/nl-shell/`,
@@ -46,7 +64,9 @@ VRAM budget on a 16 GB card:
 |---|---|---|
 | Teacher (data generation, dev fallback) | Framework Desktop, Ryzen AI Max+ 395, 128 GB unified | llama.cpp / vLLM, OpenAI-compatible endpoint on the LAN |
 | Student training + inference | Desktop, NVIDIA 16 GB | Unsloth QLoRA |
-| Reference system | Ubuntu 26.04 VM | Source of truth; execution sandbox with snapshots |
+| Reference system per target | VM for that target (initially Ubuntu 26.04) | Source of truth; harvest and execution sandbox with snapshots |
 
-**[OPEN]** Distribution channel for weights and package: GitHub releases, Hugging Face, a
-PPA, or a mix (M5.4).
+**[OPEN]** Weight URL host in `model.toml` (M5.4).
+
+**[OPEN]** Package distribution channel (M5.4). The manifest decision resolves neither
+this channel nor the weights' host.
