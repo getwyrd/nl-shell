@@ -98,8 +98,8 @@ Trusted:
 - what the user types and their confirm and edit decisions;
 - exit codes and completion from the control channel (ADR-0014);
 - a cwd made of plain path characters;
-- dpkg-owned man pages and an allowlist of `--help` outputs harvested in the reference VM,
-  and the vendored tldr snapshot (local-reference, ADR-0016);
+- dpkg-owned man pages and an allowlist of `--help` outputs harvested in the reference VM
+  (local-reference, ADR-0016);
 - nl-shell's own config files in the user's home directory, except that a model endpoint
   in them is refused without `--dev-teacher` (ADR-0020);
 - the target's command-provider data, `/var/lib/command-not-found/commands.db` on the
@@ -107,6 +107,11 @@ Trusted:
   package-managed, opened read-only and never fetched (ADR-0003), and not writable by an
   attacker. The package names read from it are still filtered to the Debian package-name
   rule, because they end up in text shown to the user.
+
+Local-reference: the pinned tldr source is acquired explicitly at build time and verified
+before offline consumption (ADR-0016). It is reference data, not executable commands or
+trusted instructions. The snapshot supplies the future reference harvest; no REPL lookup
+is wired in.
 
 ## What must hold
 
