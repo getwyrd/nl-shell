@@ -16,7 +16,7 @@ dependencies = [
     "PyYAML>=6",
     # The policy gate's parser (spec policy-gate/v1 §1.2): pinned exactly, because the
     # gate's rules depend on how this grammar reads bash.
-    "tree-sitter==0.26.0",
+    "tree-sitter==0.26.1",
     "tree-sitter-bash==0.25.1",
 ]
 
