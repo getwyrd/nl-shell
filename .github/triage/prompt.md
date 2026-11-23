@@ -62,4 +62,4 @@ Your reasons are posted publicly on the issue. Never repeat a log line, path, co
 
 ## Reasons
 
-Give one short sentence for each of type, severity, reach and area, and one for the overrides (say which apply and why, or "none apply"). Each sentence is under 200 characters, plain English, no Markdown.
+Write the reasons first, before you choose the labels: they are your reasoning, and the labels follow from them. Give one full sentence of 8 to 30 words for each of type, severity, reach and area, and one for the overrides (say which apply and why, or that none apply). Each sentence names what in the issue leads to that label, in general terms. A label word on its own ("major", "bug") or an empty string is not a reason. Each sentence is under 200 characters, plain English, no Markdown.
